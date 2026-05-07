@@ -1,0 +1,20 @@
+:root {
+  --bg: #0d0d0d;
+  --bg2: #141414;
+  --bg3: #1a1a1a;
+  --border: rgba(255,255,255,0.08);
+  --border2: rgba(255,255,255,0.14);
+  --text: #f0ede8;
+  --text2: #8a8680;
+  --text3: #5a5754;
+  --accent: #c8f55a;
+  --accent2: #9db83e;
+  --amber: #f0a030;
+  --font-display: 'Fraunces', Georgia, serif;
+  --font-mono: 'DM Mono', monospace;
+  --radius: 8px;
+  --radius-lg: 12px;
+}
+
+html, body { padding: 0; margin: 0; background: var(--bg); color: var(--text); font-family: var(--font-mono); font-size: 13px; }
+* { box-sizing: border-box; }

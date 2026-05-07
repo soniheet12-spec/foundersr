@@ -1,0 +1,284 @@
+import { useState } from 'react'
+import Head from 'next/head'
+import styles from '../styles/Home.module.css'
+
+const SECTORS = ['All sectors', 'SaaS / B2B Tech', 'Fintech', 'Healthtech', 'D2C / Consumer', 'Agritech / Climatetech']
+const STAGES = ['Pre-Seed / Seed', 'Seed / Pre-Series A', 'Series A']
+const ROUNDS = ['₹1 Cr+', '₹5 Cr+', '₹10 Cr+']
+const LIMITS = ['5', '10', '20']
+
+export default function Home() {
+  const [tab, setTab] = useState('discover')
+  const [sector, setSector] = useState('All sectors')
+  const [stage, setStage] = useState('Seed / Pre-Series A')
+  const [round, setRound] = useState('₹1 Cr+')
+  const [limit, setLimit] = useState('10')
+  const [valueProp, setValueProp] = useState('We connect high-growth Indian startups with strategic investors, co-investors, and ecosystem partners')
+  const [emailSubject, setEmailSubject] = useState('Quick note on your raise')
+  const [leads, setLeads] = useState([])
+  const [logs, setLogs] = useState([])
+  const [running, setRunning] = useState(false)
+  const [copiedIdx, setCopiedIdx] = useState(null)
+
+  const addLog = (msg) => setLogs(prev => [...prev, msg])
+
+  const runDiscover = async () => {
+    setRunning(true)
+    setLeads([])
+    setLogs([])
+    addLog('Searching Entrackr, Inc42, Crunchbase, and web sources...')
+    try {
+      const res = await fetch('/api/discover', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sector, stage, round, limit, valueProp })
+      })
+      const data = await res.json()
+      if (data.error) throw new Error(data.error)
+      addLog(`Found ${data.leads.length} leads. Drafting personalized emails...`)
+      setLeads(data.leads)
+      addLog('Done — review, copy, or export below.')
+      setTab('leads')
+    } catch (e) {
+      addLog('Error: ' + e.message)
+    }
+    setRunning(false)
+  }
+
+  const regenerateEmail = async (idx) => {
+    setLeads(prev => prev.map((l, i) => i === idx ? { ...l, regenerating: true } : l))
+    try {
+      const res = await fetch('/api/draft-email', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ lead: leads[idx], valueProp })
+      })
+      const data = await res.json()
+      setLeads(prev => prev.map((l, i) => i === idx ? { ...l, email_draft: data.draft, regenerating: false } : l))
+    } catch {
+      setLeads(prev => prev.map((l, i) => i === idx ? { ...l, regenerating: false } : l))
+    }
+  }
+
+  const updateField = (idx, field, val) => {
+    setLeads(prev => prev.map((l, i) => i === idx ? { ...l, [field]: val } : l))
+  }
+
+  const copyEmail = (idx) => {
+    const lead = leads[idx]
+    const text = `To: ${lead.email || 'unknown'}\nSubject: ${emailSubject}\n\n${lead.email_draft || ''}`
+    navigator.clipboard.writeText(text)
+    setCopiedIdx(idx)
+    setTimeout(() => setCopiedIdx(null), 1500)
+  }
+
+  const openInGmail = (idx) => {
+    const lead = leads[idx]
+    const to = encodeURIComponent(lead.email || '')
+    const subject = encodeURIComponent(emailSubject)
+    const body = encodeURIComponent(lead.email_draft || '')
+    window.open(`https://mail.google.com/mail/?view=cm&to=${to}&su=${subject}&body=${body}`, '_blank')
+  }
+
+  const downloadCSV = () => {
+    const headers = ['Name', 'Company', 'Sector', 'Stage', 'Round Size', 'Revenue', 'Email', 'LinkedIn', 'Fit Score', 'Traction', 'Source', 'Email Subject', 'Email Body']
+    const escape = (val) => {
+      const str = String(val ?? '').replace(/"/g, '""')
+      return `"${str}"`
+    }
+    const rows = leads.map(l => [
+      l.name, l.company, l.sector, l.stage, l.roundSize, l.revenue,
+      l.email, l.linkedIn, l.fitScore, l.traction, l.source,
+      emailSubject, l.email_draft
+    ].map(escape).join(','))
+    const csv = '\uFEFF' + headers.map(escape).join(',') + '\n' + rows.join('\n')
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `founder-leads-${new Date().toISOString().slice(0,10)}.csv`
+    a.click()
+    URL.revokeObjectURL(url)
+  }
+
+  const scoreColor = (s) => s >= 90 ? styles.scoreHigh : s >= 75 ? styles.scoreMid : styles.scoreLow
+
+  return (
+    <div className={styles.root}>
+      <Head>
+        <title>Founder Radar</title>
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <link rel="preconnect" href="https://fonts.googleapis.com" />
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
+        <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Fraunces:ital,opsz,wght@0,9..144,300;0,9..144,500;1,9..144,300&display=swap" rel="stylesheet" />
+      </Head>
+
+      <aside className={styles.sidebar}>
+        <div className={styles.brand}>
+          <span className={styles.brandDot} />
+          <span>Founder Radar</span>
+        </div>
+        <nav className={styles.nav}>
+          {[
+            { id: 'discover', label: 'Discover', icon: '◎' },
+            { id: 'leads', label: `Leads${leads.length ? ` (${leads.length})` : ''}`, icon: '◈' },
+          ].map(item => (
+            <button key={item.id} className={`${styles.navItem} ${tab === item.id ? styles.navActive : ''}`} onClick={() => setTab(item.id)}>
+              <span className={styles.navIcon}>{item.icon}</span>{item.label}
+            </button>
+          ))}
+        </nav>
+        <div className={styles.sidebarStats}>
+          <div className={styles.sidebarStat}>
+            <span className={styles.sidebarStatVal}>{leads.length}</span>
+            <span className={styles.sidebarStatLbl}>leads</span>
+          </div>
+          <div className={styles.sidebarStat}>
+            <span className={styles.sidebarStatVal}>{leads.filter(l => l.fitScore >= 85).length}</span>
+            <span className={styles.sidebarStatLbl}>high fit</span>
+          </div>
+        </div>
+        <div className={styles.sidebarFoot}>
+          export. send manually.
+        </div>
+      </aside>
+
+      <main className={styles.main}>
+        {tab === 'discover' && (
+          <div className={styles.panel}>
+            <div className={styles.panelHeader}>
+              <h1>Discover founders</h1>
+              <p>Find revenue-generating Indian founders actively raising — export to send manually</p>
+            </div>
+            <div className={styles.filterGrid}>
+              <div className={styles.field}>
+                <label>Sector</label>
+                <select value={sector} onChange={e => setSector(e.target.value)}>
+                  {SECTORS.map(s => <option key={s}>{s}</option>)}
+                </select>
+              </div>
+              <div className={styles.field}>
+                <label>Stage</label>
+                <select value={stage} onChange={e => setStage(e.target.value)}>
+                  {STAGES.map(s => <option key={s}>{s}</option>)}
+                </select>
+              </div>
+              <div className={styles.field}>
+                <label>Min round size</label>
+                <select value={round} onChange={e => setRound(e.target.value)}>
+                  {ROUNDS.map(r => <option key={r}>{r}</option>)}
+                </select>
+              </div>
+              <div className={styles.field}>
+                <label>Leads to generate</label>
+                <select value={limit} onChange={e => setLimit(e.target.value)}>
+                  {LIMITS.map(l => <option key={l}>{l}</option>)}
+                </select>
+              </div>
+              <div className={styles.field} style={{ gridColumn: '1 / -1' }}>
+                <label>Email subject (used for all)</label>
+                <input type="text" value={emailSubject} onChange={e => setEmailSubject(e.target.value)} />
+              </div>
+              <div className={styles.field} style={{ gridColumn: '1 / -1' }}>
+                <label>Your value proposition</label>
+                <input type="text" value={valueProp} onChange={e => setValueProp(e.target.value)} />
+              </div>
+            </div>
+            <button className={styles.btnPrimary} onClick={runDiscover} disabled={running}>
+              {running ? 'Generating...' : '▶ Generate leads'}
+            </button>
+            {logs.length > 0 && (
+              <div className={styles.logBox}>
+                {logs.map((l, i) => <div key={i} className={styles.logLine}>› {l}</div>)}
+              </div>
+            )}
+          </div>
+        )}
+
+        {tab === 'leads' && (
+          <div className={styles.panel}>
+            <div className={styles.panelHeader}>
+              <div className={styles.headerRow}>
+                <div>
+                  <h1>Leads</h1>
+                  <p>{leads.length} founders — copy, edit, or export to CSV</p>
+                </div>
+                {leads.length > 0 && (
+                  <button className={styles.btnPrimary} onClick={downloadCSV}>↓ Export CSV</button>
+                )}
+              </div>
+            </div>
+            {leads.length === 0 && <div className={styles.emptyState}>No leads yet. Run discovery first.</div>}
+            {leads.map((lead, idx) => (
+              <div key={idx} className={styles.leadCard}>
+                <div className={styles.leadTop}>
+                  <div>
+                    <div className={styles.leadName}>{lead.name}</div>
+                    <div className={styles.leadCompany}>{lead.company} · {lead.sector}</div>
+                  </div>
+                  <div className={`${styles.fitScore} ${scoreColor(lead.fitScore)}`}>
+                    {lead.fitScore}<span>/100</span>
+                  </div>
+                </div>
+                <div className={styles.scoreBar}>
+                  <div className={styles.scoreBarFill} style={{ width: `${lead.fitScore}%` }} />
+                </div>
+                <div className={styles.tags}>
+                  {[lead.stage, lead.roundSize, lead.revenue, lead.source].filter(Boolean).map((t, i) => (
+                    <span key={i} className={styles.tag}>{t}</span>
+                  ))}
+                </div>
+                <div className={styles.traction}>{lead.traction}</div>
+                <div className={styles.fitReason}>{lead.fitReason}</div>
+
+                <div className={styles.contactRow}>
+                  <div className={styles.contactField}>
+                    <label>Email</label>
+                    <input
+                      type="text"
+                      value={lead.email || ''}
+                      placeholder="founder@company.com"
+                      onChange={e => updateField(idx, 'email', e.target.value)}
+                    />
+                  </div>
+                  <div className={styles.contactField}>
+                    <label>LinkedIn</label>
+                    <input
+                      type="text"
+                      value={lead.linkedIn || ''}
+                      placeholder="linkedin.com/in/..."
+                      onChange={e => updateField(idx, 'linkedIn', e.target.value)}
+                    />
+                  </div>
+                </div>
+
+                {lead.regenerating ? (
+                  <div className={styles.draftLoading}>Drafting email...</div>
+                ) : (
+                  <textarea
+                    className={styles.emailDraft}
+                    value={lead.email_draft || ''}
+                    onChange={e => updateField(idx, 'email_draft', e.target.value)}
+                    rows={6}
+                  />
+                )}
+
+                <div className={styles.leadActions}>
+                  <button className={styles.btnPrimary} onClick={() => copyEmail(idx)}>
+                    {copiedIdx === idx ? '✓ Copied' : '⧉ Copy'}
+                  </button>
+                  <button className={styles.btnSecondary} onClick={() => openInGmail(idx)} disabled={!lead.email}>
+                    ✉ Open in Gmail
+                  </button>
+                  <button className={styles.btnSecondary} onClick={() => regenerateEmail(idx)}>
+                    Redraft
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </main>
+    </div>
+  )
+}
